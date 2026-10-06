@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>대한항공 & 아시아나 스타링크 실시간 관제</title>
+    <style>
+        :root {
+            --bg-color: #0b111e; --card-bg: #151f32; --card-border: #22324f;
+            --text-main: #f1f5f9; --text-sub: #94a3b8; --airborne-color: #10b981;
+            --ground-color: #f59e0b; --error-color: #ef4444; --primary: #0284c7;
+            --sched-bg: #1e293b; --sched-border: #3b82f6;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        body { background-color: var(--bg-color); color: var(--text-main); padding: 14px; min-height: 100vh; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--card-border); flex-wrap: wrap; gap: 8px; }
+        .title-area h1 { font-size: 19px; font-weight: 800; color: #fff; }
+        .header-badges { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .sync-period-badge { background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid #0284c7; padding: 5px 10px; border-radius: 6px; font-size: 12px; font-weight: 700; }
+        .data-status-badge { background: #1e293b; color: #e2e8f0; border: 1px solid #334155; padding: 5px 10px; border-radius: 6px; font-size: 12px; font-weight: 700; }
+        
+        .filter-bar { display: flex; gap: 6px; margin-bottom: 14px; background: #111a2c; padding: 4px; border-radius: 8px; width: fit-content; border: 1px solid var(--card-border); }
+        .filter-btn { background: transparent; border: none; color: var(--text-sub); padding: 6px 14px; font-size: 13px; font-weight: 600; border-radius: 6px; cursor: pointer; }
+        .filter-btn.active { background: var(--card-bg); color: #fff; box-shadow: 0 2px 5px rgba(0,0,0,0.3); }
+
+        .summary-stats { display: flex; gap: 10px; margin-bottom: 18px; flex-wrap: wrap; }
+        .stat-card { background: var(--card-bg); border: 1px solid var(--card-border); padding: 10px 14px; border-radius: 10px; flex: 1; min-width: 120px; display: flex; justify-content: space-between; align-items: center; }
+        .stat-card .val { font-size: 20px; font-weight: 800; }
+        .stat-card.ground .val { color: var(--ground-color); }
+        .stat-card.airborne .val { color: var(--airborne-color); }
+
+        .section-title { font-size: 17px; font-weight: 700; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+        .section-badge { font-size: 11px; padding: 2px 8px; border-radius: 12px; font-weight: 600; background: rgba(245, 158, 11, 0.2); color: var(--ground-color); }
+        .badge-airborne { background: rgba(16, 185, 129, 0.2); color: var(--airborne-color); }
+
+        .grid-container { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; margin-bottom: 26px; }
+        .plane-card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 10px; padding: 14px; box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2); }
+        .plane-card.ground { border-top: 4px solid var(--ground-color); }
+        .plane-card.ground.has-plan { border-top: 4px solid #a855f7; } /* 계획 제출 완료 기체는 보라색 강조 테두리 */
+        .plane-card.airborne { border-top: 4px solid var(--airborne-color); }
+
+        .card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 4px; }
+        .airline-tag { font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 4px; display: inline-block; }
+        .tag-koreanair { background: rgba(0, 100, 210, 0.25); color: #60a5fa; }
+        .tag-asiana { background: rgba(203, 31, 54, 0.25); color: #f87171; }
+        .reg-number { font-size: 19px; font-weight: 800; }
+        .model-name { font-size: 12px; color: #38bdf8; font-weight: 600; margin-bottom: 8px; }
+
+        /* 다음 비행 스케줄 */
+        .next-sched-box { background: var(--sched-bg); border: 1px solid var(--sched-border); border-radius: 8px; padding: 10px; margin-bottom: 8px; }
+        .next-sched-box.plan-approved { border-color: #a855f7; background: rgba(168, 85, 247, 0.08); }
+        .next-sched-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px; }
+        .next-sched-label { font-size: 11px; font-weight: 700; color: #60a5fa; }
+        .next-sched-label.plan-lbl { color: #c084fc; }
+        .source-tag { font-size: 10px; padding: 1px 6px; border-radius: 4px; font-weight: 700; }
+        .tag-ubikais { background: rgba(139, 92, 246, 0.25); color: #c084fc; border: 1px solid #a855f7; }
+        .tag-fr24 { background: rgba(2, 132, 199, 0.25); color: #38bdf8; }
+        .next-sched-flight { font-size: 15px; font-weight: 800; color: #ffffff; }
+        .next-sched-hint { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+
+        .parked-airport-box { background: rgba(245, 158, 11, 0.08); border: 1px dashed rgba(245, 158, 11, 0.4); border-radius: 8px; padding: 10px; margin-bottom: 8px; }
+        .parked-label { font-size: 11px; color: var(--ground-color); font-weight: 700; margin-bottom: 2px; }
+        .parked-value { font-size: 16px; font-weight: 800; color: #fbbf24; }
+        .parked-desc { font-size: 12px; color: var(--text-sub); margin-top: 1px; }
+        .parked-time { font-size: 12px; color: #e2e8f0; margin-top: 4px; font-weight: 600; }
+
+        .detail-row { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-sub); margin-top: 4px; }
+        .detail-row .val { color: var(--text-main); font-weight: 600; }
+        .status-pill { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 700; }
+        .pill-ground { background: var(--ground-color); color: #000; }
+        .pill-plan { background: #a855f7; color: #fff; }
+        .pill-airborne { background: var(--airborne-color); color: #000; }
+        .route-info { background: #0f172a; padding: 8px; border-radius: 6px; margin: 6px 0; display: flex; justify-content: space-around; align-items: center; font-weight: 700; }
+
+        footer { margin-top: 25px; padding: 16px; border-top: 1px solid var(--card-border); text-align: center; background: #0d1525; border-radius: 10px; }
+        .footer-counter { display: inline-flex; align-items: center; gap: 10px; background: #152238; padding: 6px 16px; border-radius: 20px; font-size: 13px; color: var(--text-sub); border: 1px solid #22375a; }
+        .visitor-count { color: #38bdf8; font-weight: 800; }
+        .footer-note { font-size: 11px; color: #64748b; margin-top: 6px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="title-area">
+                <h1>대한항공 & 아시아나 스타링크 기단 관제</h1>
+            </div>
+            <div class="header-badges">
+                <span class="sync-period-badge">동기화 주기: 5분</span>
+                <span class="data-status-badge" id="dataStatus">불러오는 중...</span>
+            </div>
+        </header>
+
+        <div class="filter-bar">
+            <button class="filter-btn active" onclick="setFilter('ALL', this)">전체</button>
+            <button class="filter-btn" onclick="setFilter('대한항공', this)">대한항공</button>
+            <button class="filter-btn" onclick="setFilter('아시아나항공', this)">아시아나항공</button>
+        </div>
+
+        <div class="summary-stats">
+            <div class="stat-card"><div><div style="font-size:11px;color:var(--text-sub)">전체 기단</div><div class="val" id="totalCount">0</div></div></div>
+            <div class="stat-card ground"><div><div style="font-size:11px;color:var(--text-sub)">공항 계류 중</div><div class="val" id="groundCount">0</div></div></div>
+            <div class="stat-card airborne"><div><div style="font-size:11px;color:var(--text-sub)">운항 중 (Airborne)</div><div class="val" id="airborneCount">0</div></div></div>
+        </div>
+
+        <!-- 1. 공항 계류 중 (비행계획서 제출 완료순 우선 정렬) -->
+        <div class="section-title">
+            🟡 공항 계류 중 (On Ground) <span style="font-size: 12px; color: var(--text-sub); font-weight: 500;">(비행계획 접수 기체 우선)</span>
+            <span class="section-badge" id="groundBadge">-</span>
+        </div>
+        <div class="grid-container" id="groundGrid"></div>
+
+        <!-- 2. 실시간 운항 중 -->
+        <div class="section-title">🟢 실시간 운항 중 (Airborne) <span class="section-badge badge-airborne" id="airborneBadge">-</span></div>
+        <div class="grid-container" id="airborneGrid"></div>
+
+        <footer>
+            <div class="footer-counter">
+                <span>👥 누적 방문자 수</span>
+                <span class="visitor-count" id="visitorCountDisplay">집계 중...</span>
+            </div>
+            <div class="footer-note">국토교통부 UBIKAIS 출발 비행계획(FPL) 연동 · GitHub Actions 5분 갱신</div>
+        </footer>
+    </div>
+
+
+    <script>
+        const SYNC_MS = 5 * 60 * 1000;
+        let airborneData = [];
+        let rawGroundData = [];
+        let currentFilter = "ALL";
+
+        async function updateVisitor() {
+            const el = document.getElementById("visitorCountDisplay");
+            try {
+                const res = await fetch("https://api.counterapi.dev/v1/starlinkcheck-fleet/visits/up");
+                if (res.ok) {
+                    const j = await res.json();
+                    if (j.count) { el.innerText = j.count.toLocaleString() + " 명"; return; }
+                }
+            } catch(e) {}
+            let c = 295;
+            try { c = Number(localStorage.getItem("SV") || 295) + 1; localStorage.setItem("SV", c); } catch(e) {}
+            el.innerText = c.toLocaleString() + " 명";
+        }
+
+        // GitHub Actions가 5분마다 data 브랜치에 올리는 fleet.json을 읽는다.
+        // 저장소 이름을 바꾸면 이 주소도 같이 바꿀 것.
+        const DATA_URL = "https://raw.githubusercontent.com/parkbur/starlink-tracker/data/fleet.json";
+
+        async function loadData() {
+            const status = document.getElementById("dataStatus");
+            try {
+                const res = await fetch(DATA_URL + "?t=" + Date.now(), { cache: "no-store" });
+                if (!res.ok) throw new Error("HTTP " + res.status);
+                const j = await res.json();
+                airborneData = j.airborne || [];
+                rawGroundData = j.ground || [];
+                const staleMin = Math.round((Date.now() - j.updatedAt) / 60000);
+                status.innerText = "기준: " + j.updatedKst + (staleMin > 15 ? ` (${staleMin}분 전 · 갱신 지연)` : "");
+                status.style.color = staleMin > 15 ? "var(--error-color)" : "";
+                render();
+            } catch (e) {
+                status.innerText = "동기화 실패 (" + e.message + ") · 5분 후 재시도";
+                status.style.color = "var(--error-color)";
+            }
+        }
+
+        function setFilter(f, btn) {
+            currentFilter = f;
+            document.querySelectorAll(".filter-btn").forEach(b => b.classList.remove("active"));
+            btn.classList.add("active");
+            render();
+        }
+
+        function render() {
+            const ab = airborneData.filter(p => currentFilter === "ALL" || p.airline === currentFilter);
+            const gd = rawGroundData.filter(p => currentFilter === "ALL" || p.airline === currentFilter);
+
+            document.getElementById("totalCount").innerText = ab.length + gd.length;
+            document.getElementById("groundCount").innerText = gd.length;
+            document.getElementById("airborneCount").innerText = ab.length;
+            document.getElementById("groundBadge").innerText = `${gd.length}대`;
+            document.getElementById("airborneBadge").innerText = `${ab.length}대`;
+
+            const gGrid = document.getElementById("groundGrid");
+            const aGrid = document.getElementById("airborneGrid");
+
+            gGrid.innerHTML = gd.length === 0 ? "<p style='color:var(--text-sub)'>계류 기체 없음</p>" : gd.map(p => {
+                const tag = p.airline === "대한항공" ? "tag-koreanair" : "tag-asiana";
+                const ok = p.fplApproved;
+                const badge = ok ? `<span class="source-tag tag-ubikais">UBIKAIS FPL 접수</span>`
+                            : p.hasScheduledPlan ? `<span class="source-tag tag-fr24">스케줄만 있음</span>` : "";
+                const hint = !p.hasScheduledPlan ? `<div class="next-sched-hint">※ 통상 출발 3~6시간 전 비행계획 제출/반영</div>` : "";
+                return `
+                    <div class="plane-card ground${ok ? " has-plan" : ""}">
+                        <div class="card-top">
+                            <div><span class="airline-tag ${tag}">${p.airline}</span><div class="reg-number">${p.reg}</div></div>
+                            <span class="status-pill ${ok ? "pill-plan" : "pill-ground"}">${ok ? "비행계획 접수" : "공항 계류중"}</span>
+                        </div>
+                        <div class="model-name">${p.model}</div>
+                        <div class="next-sched-box${ok ? " plan-approved" : ""}">
+                            <div class="next-sched-header">
+                                <span class="next-sched-label${ok ? " plan-lbl" : ""}">📅 다음 비행 스케줄</span>
+                                ${badge}
+                            </div>
+                            <div class="next-sched-flight">${p.nextFlight}</div>
+                            ${hint}
+                        </div>
+                        <div class="parked-airport-box">
+                            <div class="parked-label">📍 현재 위치 (마지막 도착 공항)</div>
+                            <div class="parked-value">${p.parkedCode}</div>
+                            <div class="parked-desc">${p.parkedName}</div>
+                            <div class="parked-time">🛬 도착 시각: ${p.arrivalTime}</div>
+                        </div>
+                        <div class="detail-row"><span>이전 운항 정보</span><span class="val">${p.lastFlight}</span></div>
+                    </div>`;
+            }).join("");
+
+            aGrid.innerHTML = ab.length === 0 ? "<p style='color:var(--text-sub)'>현재 운항 중인 기체 없음</p>" : ab.map(p => {
+                const tag = p.airline === "대한항공" ? "tag-koreanair" : "tag-asiana";
+                return `
+                    <div class="plane-card airborne">
+                        <div class="card-top">
+                            <div><span class="airline-tag ${tag}">${p.airline}</span><div class="reg-number">${p.reg}</div></div>
+                            <span class="status-pill pill-airborne">운항중</span>
+                        </div>
+                        <div class="model-name">${p.model}</div>
+                        <div class="route-info"><span>${p.orig}</span><span style="color:var(--text-sub)">✈ ➡️</span><span>${p.dest}</span></div>
+                        <div class="detail-row"><span>운항 편명</span><span class="val">${p.flightNo}</span></div>
+                        <div class="detail-row"><span>비행 상태</span><span class="val" style="color:var(--airborne-color)">${p.statusText}</span></div>
+                    </div>`;
+            }).join("");
+        }
+
+        window.onload = () => {
+            updateVisitor();
+            loadData();
+            setInterval(loadData, SYNC_MS);
+        };
+    </script>
+</body>
+</html>

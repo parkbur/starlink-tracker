@@ -1,0 +1,57 @@
+name: Fleet sync
+
+# GitHub의 schedule은 5분으로 적어도 실제로는 수 시간씩 밀린다.
+# 그래서 한 번 실행되면 작업 안에서 5분마다 반복하고, 끝날 때 자기 자신을 다시 실행한다.
+# schedule은 체인이 끊겼을 때 다시 살리는 용도.
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write   # data 브랜치 push
+  actions: write    # 다음 실행 예약
+
+concurrency:
+  group: fleet-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 5분마다 UBIKAIS 조회 → data 브랜치에 fleet.json 갱신 (약 5시간 반)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          end=$(( $(date +%s) + 330 * 60 ))
+          while [ "$(date +%s)" -lt "$end" ]; do
+            if node scripts/fleet.mjs out/fleet.json; then
+              # 이력이 쌓이지 않도록 data 브랜치는 항상 커밋 1개로 덮어쓴다
+              (
+                cd out
+                rm -rf .git
+                git init -q -b data
+                git add fleet.json
+                git -c user.name="github-actions[bot]" -c user.email="41898699+github-actions[bot]@users.noreply.github.com" commit -q -m "fleet $(date -u +%FT%TZ)"
+                git push -q -f "$remote" data
+              ) || echo "push 실패, 다음 주기에 재시도"
+            else
+              echo "UBIKAIS 조회 실패, 이전 데이터 유지"
+            fi
+            sleep 300
+          done
+
+      - name: 다음 실행 예약
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run sync.yml --ref "${GITHUB_REF_NAME}"
